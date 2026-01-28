@@ -41,6 +41,11 @@ function base64UrlDecode(input: string): string {
   return new TextDecoder().decode(bytes);
 }
 
+function isAllowedUpstreamHost(hostname: string): boolean {
+  const h = hostname.toLowerCase();
+  return h === "assets.grok.com" || h === "grok.com" || h.endsWith(".grok.com");
+}
+
 function isUuid(s: string): boolean {
   return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(s);
 }
@@ -140,6 +145,7 @@ mediaRoutes.get("/images/:imgPath{.+}", async (c) => {
   const imgPath = c.req.param("imgPath");
 
   let upstreamPath: string | null = null;
+  let upstreamUrl: URL | null = null;
 
   // New encoding: p_<base64url(pathname)>
   if (imgPath.startsWith("p_")) {
@@ -149,6 +155,19 @@ mediaRoutes.get("/images/:imgPath{.+}", async (c) => {
       upstreamPath = null;
     }
   }
+
+  // New encoding: u_<base64url(full_url)>
+  if (imgPath.startsWith("u_")) {
+    try {
+      const decodedUrl = base64UrlDecode(imgPath.slice(2));
+      const u = new URL(decodedUrl);
+      if (isAllowedUpstreamHost(u.hostname)) upstreamUrl = u;
+    } catch {
+      upstreamUrl = null;
+    }
+  }
+
+  if (upstreamUrl) upstreamPath = upstreamUrl.pathname;
 
   // Legacy encoding (best-effort): users-<uuid>-generated-<uuid>-image.jpg
   if (!upstreamPath) upstreamPath = decodeLegacyHyphenPath(imgPath);
@@ -168,8 +187,8 @@ mediaRoutes.get("/images/:imgPath{.+}", async (c) => {
   if (!upstreamPath.startsWith("/")) upstreamPath = `/${upstreamPath}`;
   upstreamPath = upstreamPath.replace(/\/{2,}/g, "/");
 
-  const originalPath = upstreamPath;
-  const url = new URL(`https://assets.grok.com${upstreamPath}`);
+  const originalPath = upstreamUrl?.pathname ?? upstreamPath;
+  const url = upstreamUrl ?? new URL(`https://assets.grok.com${originalPath}`);
   const type = detectTypeByPath(originalPath);
   const key = r2Key(type, imgPath);
   const cacheSeconds = guessCacheSeconds(originalPath);

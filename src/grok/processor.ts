@@ -63,9 +63,11 @@ function base64UrlEncode(input: string): string {
 function encodeAssetPath(raw: string): string {
   try {
     const u = new URL(raw);
-    return `p_${base64UrlEncode(u.pathname)}`;
+    // Keep full URL (query etc.) to avoid lossy pathname-only encoding (some URLs may encode the real path in query).
+    return `u_${base64UrlEncode(u.toString())}`;
   } catch {
-    return `p_${base64UrlEncode(raw.startsWith("/") ? raw : `/${raw}`)}`;
+    const p = raw.startsWith("/") ? raw : `/${raw}`;
+    return `p_${base64UrlEncode(p)}`;
   }
 }
 
