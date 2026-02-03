@@ -1,4 +1,4 @@
-name: One-Click Deploy
+name: Deploy to Cloudflare Workers
 
 on:
   workflow_dispatch:
