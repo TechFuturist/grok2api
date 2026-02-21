@@ -18,14 +18,32 @@ function isUrl(input: string): boolean {
 
 function isLocalUploadPath(input: string): boolean {
   const trimmed = input.trim();
-  // Match: /images/upload-xxx.ext or images/upload-xxx.ext
-  return /^\/?images\/upload-[0-9a-f-]+\.\w+$/i.test(trimmed);
+  // Match relative path: /images/upload-xxx.ext or images/upload-xxx.ext
+  if (/^\/?images\/upload-[0-9a-f-]+\.\w+$/i.test(trimmed)) {
+    return true;
+  }
+  // Match full URL: https://xxx/images/upload-xxx.ext
+  try {
+    const u = new URL(trimmed);
+    return /^\/images\/upload-[0-9a-f-]+\.\w+$/i.test(u.pathname);
+  } catch {
+    return false;
+  }
 }
 
 function extractKvKeyFromPath(input: string): string {
-  const trimmed = input.trim().replace(/^\//, "");
-  // trimmed: "images/upload-xxx.ext" -> KV key: "image/upload-xxx.ext"
-  return trimmed.replace(/^images\//, "image/");
+  let pathname = input.trim();
+  // If full URL, extract pathname
+  try {
+    const u = new URL(pathname);
+    pathname = u.pathname;
+  } catch {
+    // Not a URL, use as-is
+  }
+  // Remove leading slash: "/images/upload-xxx.ext" -> "images/upload-xxx.ext"
+  pathname = pathname.replace(/^\//, "");
+  // Convert: "images/upload-xxx.ext" -> "image/upload-xxx.ext"
+  return pathname.replace(/^images\//, "image/");
 }
 
 function guessMimeFromExt(path: string): string {
