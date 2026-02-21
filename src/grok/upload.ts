@@ -1,4 +1,5 @@
 import type { GrokSettings } from "../settings";
+import type { Env } from "../env";
 import { getDynamicHeaders } from "./headers";
 import { arrayBufferToBase64 } from "../utils/base64";
 
@@ -13,6 +14,27 @@ function isUrl(input: string): boolean {
   } catch {
     return false;
   }
+}
+
+function isLocalUploadPath(input: string): boolean {
+  const trimmed = input.trim();
+  // Match: /images/upload-xxx.ext or images/upload-xxx.ext
+  return /^\/?images\/upload-[0-9a-f-]+\.\w+$/i.test(trimmed);
+}
+
+function extractKvKeyFromPath(input: string): string {
+  const trimmed = input.trim().replace(/^\//, "");
+  // trimmed: "images/upload-xxx.ext" -> KV key: "image/upload-xxx.ext"
+  return trimmed.replace(/^images\//, "image/");
+}
+
+function guessMimeFromExt(path: string): string {
+  const lower = path.toLowerCase();
+  if (lower.endsWith(".png")) return "image/png";
+  if (lower.endsWith(".webp")) return "image/webp";
+  if (lower.endsWith(".gif")) return "image/gif";
+  if (lower.endsWith(".jpg") || lower.endsWith(".jpeg")) return "image/jpeg";
+  return MIME_DEFAULT;
 }
 
 function guessExtFromMime(mime: string): string {
@@ -35,12 +57,25 @@ export async function uploadImage(
   imageInput: string,
   cookie: string,
   settings: GrokSettings,
+  env?: Env,
 ): Promise<{ fileId: string; fileUri: string }> {
   let base64 = "";
   let mime = MIME_DEFAULT;
   let filename = "image.jpg";
 
-  if (isUrl(imageInput)) {
+  if (isLocalUploadPath(imageInput) && env?.KV_CACHE) {
+    // Handle local upload path: /images/upload-xxx.ext
+    const kvKey = extractKvKeyFromPath(imageInput);
+    const cached = await env.KV_CACHE.getWithMetadata<{ contentType?: string }>(kvKey, {
+      type: "arrayBuffer",
+    });
+    if (!cached?.value) {
+      throw new Error(`本地上传图片不存在或已过期: ${imageInput}`);
+    }
+    mime = cached.metadata?.contentType ?? guessMimeFromExt(imageInput);
+    base64 = arrayBufferToBase64(cached.value);
+    filename = `image.${guessExtFromMime(mime)}`;
+  } else if (isUrl(imageInput)) {
     const r = await fetch(imageInput, { redirect: "follow" });
     if (!r.ok) throw new Error(`下载图片失败: ${r.status}`);
     mime = r.headers.get("content-type")?.split(";")[0] ?? MIME_DEFAULT;
